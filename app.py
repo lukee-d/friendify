@@ -36,11 +36,8 @@ def index():
     if 'token_info' not in session:
         return redirect(url_for('login'))
 
-    token_info = session['token_info']
-    sp = get_spotify_client(token_info['access_token'])
+    return "You're logged in! Go to /saved_tracks or /create_playlist"
 
-    # Redirect straight to callback to keep logic consistent
-    return redirect(url_for('callback', code=token_info['access_token']))
 
 
 @app.route('/login')
