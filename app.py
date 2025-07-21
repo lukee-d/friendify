@@ -8,7 +8,6 @@ load_dotenv()
 
 SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
-SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI")
 
 
 
@@ -16,9 +15,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
 # Spotify OAuth setup
-SPOTIPY_CLIENT_ID = "your_client_id"
-SPOTIPY_CLIENT_SECRET = "your_client_secret"
-SPOTIPY_REDIRECT_URI = "http://localhost:5000/callback"
+SPOTIPY_REDIRECT_URI = "https://friendify-s2rz.onrender.com/callback"
 SCOPE = "user-top-read"
 
 sp_oauth = SpotifyOAuth(client_id=SPOTIPY_CLIENT_ID,
