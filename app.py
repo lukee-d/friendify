@@ -52,14 +52,16 @@ def login():
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
-    token_info = sp_oauth.get_access_token(code)
+    token_info = get_spotify_oauth().get_access_token(code)
     access_token = token_info['access_token']
 
-    sp = spotipy.Spotify(auth=access_token)
+    sp = Spotify(auth=access_token)
 
     # ✅ Get user's Spotify display name
     profile = sp.current_user()
     display_name = profile.get('display_name', 'Unknown User')
+    session['token_info'] = token_info
+    session['user_id'] = profile['id']
 
     # ✅ Get top 5 tracks (with names + artists)
     top_tracks = sp.current_user_top_tracks(limit=5, time_range='short_term')
@@ -67,12 +69,13 @@ def callback():
     for item in top_tracks['items']:
         name = item['name']
         artists = ', '.join([artist['name'] for artist in item['artists']])
-        track_info.append(f"{name} by {artists}")
+        track_info.append(item['uri'])  # Save URI for playlist creation
 
     # ✅ Save using display name
     user_top_tracks[display_name] = track_info
 
     return f"Hello {display_name}! Your top 5 tracks have been saved."
+
 
 
 
