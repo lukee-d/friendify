@@ -13,10 +13,10 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY')
 # Spotify app credentials from environment variables
 CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
 CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
-REDIRECT_URI = 'https://friendify-s2rz.onrender.com/callback'  # Update with your actual deployed URL
+REDIRECT_URI = 'https://friendify-s2rz.onrender.com/callback'  # Update with your deployed URL
 SCOPE = 'user-top-read playlist-modify-public playlist-modify-private'
 
-# In-memory store for users' top tracks: {user_id: [track_uris]}
+# Store top tracks per user: {display_name: [ { 'uri': ..., 'name': ..., 'artist': ... }, ... ]}
 user_top_tracks = {}
 
 def get_spotify_oauth():
@@ -35,10 +35,7 @@ def get_spotify_client(token):
 def index():
     if 'token_info' not in session:
         return redirect(url_for('login'))
-
     return "You're logged in! Go to /saved_tracks or /create_playlist"
-
-
 
 @app.route('/login')
 def login():
@@ -54,27 +51,26 @@ def callback():
 
     sp = Spotify(auth=access_token)
 
-    # ✅ Get user's Spotify display name
     profile = sp.current_user()
     display_name = profile.get('display_name', 'Unknown User')
     session['token_info'] = token_info
     session['user_id'] = profile['id']
 
-    # ✅ Get top 5 tracks (with names + artists)
-    top_tracks = sp.current_user_top_tracks(limit=5, time_range='short_term')
-    track_info = []
-    for item in top_tracks['items']:
-        name = item['name']
-        artists = ', '.join([artist['name'] for artist in item['artists']])
-        track_info.append(item['uri'])  # Save URI for playlist creation
+    # Get user's top tracks
+    results = sp.current_user_top_tracks(limit=5, time_range='short_term')
 
-    # ✅ Save using display name
+    track_info = []
+    for item in results['items']:
+        track_info.append({
+            'uri': item['uri'],
+            'name': item['name'],
+            'artist': ', '.join([artist['name'] for artist in item['artists']])
+        })
+
+    # Save using display name
     user_top_tracks[display_name] = track_info
 
     return f"Hello {display_name}! Your top 5 tracks have been saved."
-
-
-
 
 @app.route('/create_playlist')
 def create_playlist():
@@ -85,15 +81,17 @@ def create_playlist():
     sp = get_spotify_client(token_info['access_token'])
     user_id = session['user_id']
 
-    # Combine all users' saved tracks, remove duplicates
-    combined_tracks = list({track for tracks in user_top_tracks.values() for track in tracks})
+    # Collect all unique URIs
+    combined_uris = list({
+        track['uri'] for tracks in user_top_tracks.values() for track in tracks
+    })
 
-    # Create playlist in the current user's account
+    # Create playlist
     playlist = sp.user_playlist_create(user=user_id, name="Combined Top Tracks Playlist")
 
-    # Add tracks in batches of 100 (Spotify limit)
-    for i in range(0, len(combined_tracks), 100):
-        sp.playlist_add_items(playlist_id=playlist['id'], items=combined_tracks[i:i+100])
+    # Add tracks (max 100 at a time)
+    for i in range(0, len(combined_uris), 100):
+        sp.playlist_add_items(playlist_id=playlist['id'], items=combined_uris[i:i+100])
 
     return f"Combined playlist created! Listen here: {playlist['external_urls']['spotify']}"
 
@@ -103,11 +101,13 @@ def saved_tracks():
     for user, tracks in user_top_tracks.items():
         output += f"\nUser: {user}\n"
         for track in tracks:
-            output += track + "\n"
+            output += f"{track['name']} by {track['artist']}\n"
     return f"<pre>{output}</pre>"
 
-
-
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(debug=True)
