@@ -1,47 +1,91 @@
-from flask import Flask, request, redirect, session, url_for
-import spotipy
+import os
+from dotenv import load_dotenv
+from flask import Flask, session, redirect, url_for, request
+from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
 
+# Load environment variables from .env file
+load_dotenv()
+
 app = Flask(__name__)
-app.secret_key = 'supersneakylukekey'  # Change this!
+app.secret_key = os.getenv('FLASK_SECRET_KEY')
 
-CLIENT_ID = '5794dafbd677419b96cec1425c518a47'
-CLIENT_SECRET = 'f11d64e15c1049628a6e31d375ebb2a1'
-REDIRECT_URI = 'https://friendify-s2rz.onrender.com/callback'  # update after ngrok setup
-SCOPE = 'user-top-read playlist-modify-private'
+# Spotify app credentials from environment variables
+CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+REDIRECT_URI = 'https://friendify-s2rz.onrender.com/callback'  # Update with your actual deployed URL
+SCOPE = 'user-top-read playlist-modify-public playlist-modify-private'
 
-# Initialize Spotify OAuth object (no caching here for simplicity)
-sp_oauth = SpotifyOAuth(client_id=CLIENT_ID,
-                        client_secret=CLIENT_SECRET,
-                        redirect_uri=REDIRECT_URI,
-                        scope=SCOPE,
-                        cache_path=".cache")
+# In-memory store for users' top tracks: {user_id: [track_uris]}
+user_top_tracks = {}
+
+def get_spotify_oauth():
+    return SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope=SCOPE,
+        cache_path=None
+    )
+
+def get_spotify_client(token):
+    return Spotify(auth=token)
 
 @app.route('/')
 def index():
-    if 'token_info' in session:
-        return 'Logged in! <a href="/top-tracks">See Top Tracks</a>'
-    else:
-        auth_url = sp_oauth.get_authorize_url()
-        return f'<a href="{auth_url}">Log in with Spotify</a>'
+    if 'token_info' not in session:
+        return redirect(url_for('login'))
+
+    token_info = session['token_info']
+    sp = get_spotify_client(token_info['access_token'])
+    user = sp.current_user()
+    user_id = user['id']
+    session['user_id'] = user_id
+
+    # Get user's top 5 tracks
+    results = sp.current_user_top_tracks(limit=5, time_range='short_term')
+    top_tracks = [item['uri'] for item in results['items']]
+
+    # Save or update user's top tracks in the global dictionary
+    user_top_tracks[user_id] = top_tracks
+
+    return f"Hello {user['display_name']}! Your top 5 tracks have been saved."
+
+@app.route('/login')
+def login():
+    sp_oauth = get_spotify_oauth()
+    auth_url = sp_oauth.get_authorize_url()
+    return redirect(auth_url)
 
 @app.route('/callback')
 def callback():
+    sp_oauth = get_spotify_oauth()
+    session.clear()
     code = request.args.get('code')
-    token_info = sp_oauth.get_access_token(code)
+    token_info = sp_oauth.get_access_token(code, check_cache=False)
     session['token_info'] = token_info
     return redirect(url_for('index'))
 
-@app.route('/top-tracks')
-def top_tracks():
-    token_info = session.get('token_info', None)
-    if not token_info:
-        return redirect(url_for('index'))
+@app.route('/create_playlist')
+def create_playlist():
+    if 'token_info' not in session or 'user_id' not in session:
+        return redirect(url_for('login'))
 
-    sp = spotipy.Spotify(auth=token_info['access_token'])
-    results = sp.current_user_top_tracks(limit=5)
-    tracks = [f"{t['name']} by {t['artists'][0]['name']}" for t in results['items']]
-    return '<br>'.join(tracks)
+    token_info = session['token_info']
+    sp = get_spotify_client(token_info['access_token'])
+    user_id = session['user_id']
+
+    # Combine all users' saved tracks, remove duplicates
+    combined_tracks = list({track for tracks in user_top_tracks.values() for track in tracks})
+
+    # Create playlist in the current user's account
+    playlist = sp.user_playlist_create(user=user_id, name="Combined Top Tracks Playlist")
+
+    # Add tracks in batches of 100 (Spotify limit)
+    for i in range(0, len(combined_tracks), 100):
+        sp.playlist_add_items(playlist_id=playlist['id'], items=combined_tracks[i:i+100])
+
+    return f"Combined playlist created! Listen here: {playlist['external_urls']['spotify']}"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(debug=True)
