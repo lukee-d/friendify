@@ -59,12 +59,29 @@ def login():
 
 @app.route('/callback')
 def callback():
-    sp_oauth = get_spotify_oauth()
-    session.clear()
     code = request.args.get('code')
-    token_info = sp_oauth.get_access_token(code, check_cache=False)
-    session['token_info'] = token_info
-    return redirect(url_for('index'))
+    token_info = sp_oauth.get_access_token(code)
+    access_token = token_info['access_token']
+
+    sp = spotipy.Spotify(auth=access_token)
+
+    # Get user's Spotify profile info
+    profile = sp.current_user()
+    display_name = profile['display_name']
+
+    # Get top 5 tracks
+    top_tracks = sp.current_user_top_tracks(limit=5, time_range='short_term')
+    track_info = []
+    for item in top_tracks['items']:
+        name = item['name']
+        artists = ', '.join([artist['name'] for artist in item['artists']])
+        track_info.append(f"{name} by {artists}")
+
+    # Save to the dictionary using display_name as the key
+    user_top_tracks[display_name] = track_info
+
+    return f"Hello {display_name}! Your top 5 tracks have been saved."
+
 
 @app.route('/create_playlist')
 def create_playlist():
@@ -93,13 +110,14 @@ def saved_tracks():
         return "No tracks saved yet."
     
     response = "<h2>Saved Users' Top Tracks:</h2>"
-    for user_id, tracks in user_top_tracks.items():
-        response += f"<p><b>User:</b> {user_id}<br>"
+    for user_name, tracks in user_top_tracks.items():
+        response += f"<p><b>User:</b> {user_name}<br>"
         response += "<ul>"
         for track in tracks:
             response += f"<li>{track}</li>"
         response += "</ul></p>"
     return response
+
 
 
 if __name__ == '__main__':
