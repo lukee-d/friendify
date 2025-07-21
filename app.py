@@ -1,4 +1,4 @@
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, redirect, request, url_for
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import json
@@ -8,24 +8,21 @@ load_dotenv()
 
 SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
-
-
+SPOTIPY_REDIRECT_URI = "https://friendify-s2rz.onrender.com/callback"
+SCOPE = "user-top-read"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
-# Spotify OAuth setup
-SPOTIPY_REDIRECT_URI = "https://friendify-s2rz.onrender.com/callback"
-SCOPE = "user-top-read"
-
-sp_oauth = SpotifyOAuth(client_id=SPOTIPY_CLIENT_ID,
-                        client_secret=SPOTIPY_CLIENT_SECRET,
-                        redirect_uri=SPOTIPY_REDIRECT_URI,
-                        scope=SCOPE)
+sp_oauth = SpotifyOAuth(
+    client_id=SPOTIPY_CLIENT_ID,
+    client_secret=SPOTIPY_CLIENT_SECRET,
+    redirect_uri=SPOTIPY_REDIRECT_URI,
+    scope=SCOPE
+)
 
 DATA_FILE = "data.json"
 
-# Save a user's top tracks to JSON
 def save_user_tracks(user_id, display_name, track_info):
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r') as f:
@@ -41,22 +38,25 @@ def save_user_tracks(user_id, display_name, track_info):
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-# Helper to get a Spotify client
-def get_spotify_client(token):
-    return spotipy.Spotify(auth=token)
-
 @app.route('/')
 def index():
-    if 'token_info' not in session:
-        return redirect(url_for('login'))
+    return "<a href='/login'>Log in with Spotify</a>"
 
-    token_info = session['token_info']
-    sp = get_spotify_client(token_info['access_token'])
+@app.route('/login')
+def login():
+    auth_url = sp_oauth.get_authorize_url()
+    return redirect(auth_url)
+
+@app.route('/callback')
+def callback():
+    code = request.args.get('code')
+    token_info = sp_oauth.get_access_token(code)
+
+    sp = spotipy.Spotify(auth=token_info['access_token'])
     user = sp.current_user()
     user_id = user['id']
     display_name = user.get('display_name', user_id)
 
-    # Get top 5 tracks
     results = sp.current_user_top_tracks(limit=5, time_range='short_term')
     track_info = []
     for item in results['items']:
@@ -69,18 +69,6 @@ def index():
     save_user_tracks(user_id, display_name, track_info)
 
     return f"Hello {display_name}! Your top 5 tracks have been saved.<br><a href='/saved_tracks'>View All Saved Tracks</a>"
-
-@app.route('/login')
-def login():
-    auth_url = sp_oauth.get_authorize_url()
-    return redirect(auth_url)
-
-@app.route('/callback')
-def callback():
-    code = request.args.get('code')
-    token_info = sp_oauth.get_access_token(code)
-    session['token_info'] = token_info
-    return redirect(url_for('index'))
 
 @app.route('/saved_tracks')
 def saved_tracks():
@@ -104,7 +92,5 @@ def saved_tracks():
     return html
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))  # Use Render's port or fallback to 5000
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
