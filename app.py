@@ -38,18 +38,10 @@ def index():
 
     token_info = session['token_info']
     sp = get_spotify_client(token_info['access_token'])
-    user = sp.current_user()
-    user_id = user['id']
-    session['user_id'] = user_id
 
-    # Get user's top 5 tracks
-    results = sp.current_user_top_tracks(limit=5, time_range='short_term')
-    top_tracks = [item['uri'] for item in results['items']]
+    # Redirect straight to callback to keep logic consistent
+    return redirect(url_for('callback', code=token_info['access_token']))
 
-    # Save or update user's top tracks in the global dictionary
-    user_top_tracks[user_id] = top_tracks
-
-    return f"Hello {user['display_name']}! Your top 5 tracks have been saved."
 
 @app.route('/login')
 def login():
