@@ -7,7 +7,7 @@ app.secret_key = 'supersneakylukekey'  # Change this!
 
 CLIENT_ID = '5794dafbd677419b96cec1425c518a47'
 CLIENT_SECRET = 'f11d64e15c1049628a6e31d375ebb2a1'
-REDIRECT_URI = 'https://4387caee7728.ngrok-free.app/callback'  # update after ngrok setup
+REDIRECT_URI = 'https://friendify-s2rz.onrender.com/callback'  # update after ngrok setup
 SCOPE = 'user-top-read playlist-modify-private'
 
 # Initialize Spotify OAuth object (no caching here for simplicity)
