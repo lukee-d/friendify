@@ -6,9 +6,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-SPOTIPY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID")
-SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET")
-SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIFY_REDIRECT_URI")
+SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
+SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
+SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI")
 
 
 
@@ -106,6 +106,8 @@ def saved_tracks():
 
     return html
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5000))  # Use Render's port or fallback to 5000
+    app.run(host="0.0.0.0", port=port, debug=True)
 
