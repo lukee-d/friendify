@@ -1,1 +1,2 @@
-wheel==0.45.1
+gunicorn==23.0.0
+packaging==25.0
