@@ -87,5 +87,20 @@ def create_playlist():
 
     return f"Combined playlist created! Listen here: {playlist['external_urls']['spotify']}"
 
+@app.route('/saved_tracks')
+def saved_tracks():
+    if not user_top_tracks:
+        return "No tracks saved yet."
+    
+    response = "<h2>Saved Users' Top Tracks:</h2>"
+    for user_id, tracks in user_top_tracks.items():
+        response += f"<p><b>User:</b> {user_id}<br>"
+        response += "<ul>"
+        for track in tracks:
+            response += f"<li>{track}</li>"
+        response += "</ul></p>"
+    return response
+
+
 if __name__ == '__main__':
     app.run(debug=True)
