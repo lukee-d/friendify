@@ -1,18 +1,26 @@
-from flask import Flask, redirect, request, url_for
+from flask import Flask, redirect, request, url_for, session
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import json
 import os
 from dotenv import load_dotenv
+from flask_sqlalchemy import SQLAlchemy
+
 load_dotenv()
 
+# Flask setup
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY")
+
+# PostgreSQL setup (Render provides DATABASE_URL)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("postgres://", "postgresql://", 1)  # Fix for Render
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Spotify OAuth setup
 SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = "https://friendify-s2rz.onrender.com/callback"
 SCOPE = "user-top-read"
-
-app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
 sp_oauth = SpotifyOAuth(
     client_id=SPOTIPY_CLIENT_ID,
@@ -21,23 +29,18 @@ sp_oauth = SpotifyOAuth(
     scope=SCOPE
 )
 
-DATA_FILE = "data.json"
+# Database Model
+class UserTracks(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(50), unique=True)
+    display_name = db.Column(db.String(100))
+    tracks = db.Column(db.JSON)  # Stores track data as JSON
 
-def save_user_tracks(user_id, display_name, track_info):
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            data = json.load(f)
-    else:
-        data = {}
+# Create tables (run once)
+with app.app_context():
+    db.create_all()
 
-    data[user_id] = {
-        'display_name': display_name,
-        'tracks': track_info
-    }
-
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
-
+# Routes
 @app.route('/')
 def index():
     return "<a href='/login'>Log in with Spotify</a>"
@@ -57,6 +60,7 @@ def callback():
     user_id = user['id']
     display_name = user.get('display_name', user_id)
 
+    # Fetch top 5 tracks
     results = sp.current_user_top_tracks(limit=5, time_range='short_term')
     track_info = []
     for item in results['items']:
@@ -66,31 +70,39 @@ def callback():
             'image': item['album']['images'][0]['url'] if item['album']['images'] else None
         })
 
-    save_user_tracks(user_id, display_name, track_info)
+    # Save to PostgreSQL
+    user = UserTracks.query.filter_by(user_id=user_id).first()
+    if user:
+        user.tracks = track_info
+        user.display_name = display_name
+    else:
+        user = UserTracks(user_id=user_id, display_name=display_name, tracks=track_info)
+        db.session.add(user)
+    db.session.commit()
 
-    return f"Hello {display_name}! Your top 5 tracks have been saved.<br><a href='/saved_tracks'>View All Saved Tracks</a>"
+    return f"""
+        Hello {display_name}! Your top 5 tracks have been saved.
+        <br><a href='/saved_tracks'>View All Friends' Tracks</a>
+    """
 
 @app.route('/saved_tracks')
 def saved_tracks():
-    if not os.path.exists(DATA_FILE):
+    users = UserTracks.query.all()
+    if not users:
         return "No users have saved tracks yet."
 
-    with open(DATA_FILE, 'r') as f:
-        data = json.load(f)
-
-    html = "<h2>Saved Users' Top Tracks:</h2>"
-    for user_id, user_data in data.items():
-        html += f"<h3>{user_data['display_name']}</h3><ul>"
-        for track in user_data['tracks']:
+    html = "<h2>All Friends' Top Tracks:</h2>"
+    for user in users:
+        html += f"<h3>{user.display_name}</h3><ul>"
+        for track in user.tracks:
             html += "<li>"
             html += f"<strong>{track['name']}</strong> by {track['artists']}<br>"
             if track['image']:
                 html += f"<img src='{track['image']}' style='height:100px;'><br>"
             html += "</li>"
         html += "</ul><hr>"
-
     return html
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port)
