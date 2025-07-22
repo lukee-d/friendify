@@ -162,6 +162,15 @@ def saved_tracks():
     except Exception as e:
         return f"Database error: {str(e)}", 500
 
+@app.route('/admin/clear_users')
+def clear_users():
+    try:
+        num_deleted = UserTracks.query.delete()
+        db.session.commit()
+        return f"Deleted {num_deleted} users from the database."
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
