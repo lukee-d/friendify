@@ -4,6 +4,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
+import random
 
 load_dotenv()
 
@@ -46,6 +47,7 @@ def index():
             Logged in as {session.get('display_name', session['user_id'])}<br>
             <a href='/my_tracks'>View My Tracks</a><br>
             <a href='/saved_tracks'>View All Friends' Tracks</a><br>
+            <a href='/game'>Play the Guessing Game</a><br>
             <a href='/logout'>Log out</a>
         """
     else:
@@ -90,11 +92,12 @@ def callback():
         session['display_name'] = display_name
 
         # Get top tracks
-        results = sp.current_user_top_tracks(limit=5, time_range='short_term')
+        results = sp.current_user_top_tracks(limit=20, time_range='short_term')
         track_info = [{
             'name': item['name'],
             'artists': ', '.join(artist['name'] for artist in item['artists']),
-            'image': item['album']['images'][0]['url'] if item['album']['images'] else None
+            'image': item['album']['images'][0]['url'] if item['album']['images'] else None,
+            'preview_url': item.get('preview_url')  # For audio preview in game
         } for item in results['items']]
 
         # Save to database
@@ -161,6 +164,51 @@ def saved_tracks():
 
     except Exception as e:
         return f"Database error: {str(e)}", 500
+
+@app.route('/game')
+def game():
+    # Pool all users' top 20 tracks
+    users = UserTracks.query.all()
+    if not users:
+        return "No users have saved tracks yet."
+
+    # Build a pool: each entry is (track, [user_display_names])
+    track_pool = {}
+    for user in users:
+        for track in user.tracks:
+            key = (track['name'], track['artists'])
+            if key not in track_pool:
+                track_pool[key] = {'track': track, 'owners': []}
+            track_pool[key]['owners'].append(user.display_name)
+
+    # Pick 10 random tracks for the game
+    all_tracks = list(track_pool.values())
+    if len(all_tracks) < 10:
+        rounds = len(all_tracks)
+    else:
+        rounds = 10
+    selected_tracks = random.sample(all_tracks, rounds)
+
+    # Render a simple HTML game (for demo; you can expand with JS later)
+    html = "<h2>Guess Whose Song!</h2>"
+    html += "<ol>"
+    for i, entry in enumerate(selected_tracks, 1):
+        track = entry['track']
+        owners = entry['owners']
+        html += f"<li>"
+        html += f"<strong>{track['name']}</strong> by {track['artists']}<br>"
+        if track.get('image'):
+            html += f"<img src='{track['image']}' style='height:100px;'><br>"
+        if track.get('preview_url'):
+            html += f"<audio controls src='{track['preview_url']}'></audio><br>"
+        html += f"<form method='post' action='/game/guess'><input type='hidden' name='track' value='{track['name']}|{track['artists']}'>"
+        for owner in owners:
+            html += f"<button type='submit' name='guess' value='{owner}'>{owner}</button> "
+        html += "</form>"
+        html += "</li>"
+    html += "</ol>"
+    html += "<a href='/'>Back to Home</a>"
+    return html
 
 @app.route('/admin/clear_users')
 def clear_users():
