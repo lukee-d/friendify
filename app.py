@@ -13,7 +13,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
 # PostgreSQL setup (Render provides DATABASE_URL)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace(
-    "postgres://", "postgresql+psycopg://", 1  # Key change: postgresql+psycopg://
+    "postgres://", "postgresql+psycopg://", 1
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
