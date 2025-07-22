@@ -1,30 +1,40 @@
-from flask import Flask, redirect, request, url_for, session
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import os
-from dotenv import load_dotenv
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-import psycopg
-import sqlalchemy.dialects.postgresql.psycopg
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from dotenv import load_dotenv
 
-print("psycopg version:", psycopg.__version__)
-
+# Load environment variables
 load_dotenv()
 
-# Flask setup
+# Create Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
-# PostgreSQL setup (Render provides DATABASE_URL)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace(
-    "postgres://", "postgresql+psycopg://", 1
-)
+# Get and clean up the database URL
+raw_db_url = os.environ.get("DATABASE_URL")
+if raw_db_url is None:
+    raise ValueError("DATABASE_URL is not set in environment variables.")
+
+# Ensure compatibility with psycopg3
+db_url = raw_db_url.replace("postgres://", "postgresql+psycopg://", 1)
+
+# Set any needed SQLAlchemy options
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,  # Helps with Render's connection recycling
-    'pool_recycle': 300,    # 5 minutes (Render kills idle connections)
-}
-db = SQLAlchemy(app)
+
+# Create the SQLAlchemy engine explicitly with psycopg3
+engine = create_engine(db_url, pool_pre_ping=True, future=True)
+
+# Setup the scoped session
+db_session = scoped_session(sessionmaker(bind=engine, autoflush=False))
+
+# Initialize the SQLAlchemy ORM
+db = SQLAlchemy()
+db.init_app(app)
+
+
+
 
 # Spotify OAuth setup
 SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
