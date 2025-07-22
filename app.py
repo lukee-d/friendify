@@ -5,6 +5,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 import random
+import string
 
 load_dotenv()
 
@@ -50,6 +51,10 @@ class LobbyMember(db.Model):
 with app.app_context():
     db.create_all()
 
+# Helper Functions
+def generate_lobby_code(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
 # Routes
 @app.route('/')
 def index():
@@ -58,7 +63,9 @@ def index():
             Logged in as {session.get('display_name', session['user_id'])}<br>
             <a href='/my_tracks'>View My Tracks</a><br>
             <a href='/saved_tracks'>View All Friends' Tracks</a><br>
-            <a href='/game/start'>Play the Guessing Game</a><br>
+            <a href='/game/start'>Play the Guessing Game (Solo)</a><br>
+            <a href='/lobby/create'>Create Multiplayer Lobby</a><br>
+            <a href='/lobby/join'>Join Multiplayer Lobby</a><br>
             <a href='/logout'>Log out</a>
         """
     else:
@@ -283,6 +290,152 @@ def game_end():
     session.pop('game_score', None)
     return html
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+@app.route('/lobby/create')
+def lobby_create():
+    # Only allow if logged in
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    code = generate_lobby_code()
+    lobby = Lobby(code=code, state={})
+    db.session.add(lobby)
+    db.session.commit()
+    # Add creator as member
+    member = LobbyMember(lobby_id=lobby.id, user_id=session['user_id'], display_name=session['display_name'])
+    db.session.add(member)
+    db.session.commit()
+    return redirect(url_for('lobby_view', code=code))
+
+@app.route('/lobby/join', methods=['GET', 'POST'])
+def lobby_join():
+    if request.method == 'POST':
+        code = request.form.get('code', '').upper()
+        lobby = Lobby.query.filter_by(code=code).first()
+        if not lobby:
+            return "Lobby not found. <a href='/lobby/join'>Try again</a>"
+        # Add user as member if not already
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        existing = LobbyMember.query.filter_by(lobby_id=lobby.id, user_id=session['user_id']).first()
+        if not existing:
+            member = LobbyMember(lobby_id=lobby.id, user_id=session['user_id'], display_name=session['display_name'])
+            db.session.add(member)
+            db.session.commit()
+        return redirect(url_for('lobby_view', code=code))
+    return '''
+        <form method="post">
+            Enter Lobby Code: <input name="code" maxlength="8">
+            <button type="submit">Join</button>
+        </form>
+        <a href="/">Back to Home</a>
+    '''
+
+@app.route('/lobby/<code>')
+def lobby_view(code):
+    lobby = Lobby.query.filter_by(code=code).first()
+    if not lobby:
+        return "Lobby not found."
+    members = LobbyMember.query.filter_by(lobby_id=lobby.id).all()
+    html = f"<h2>Lobby {code}</h2>"
+    html += "<ul>"
+    for m in members:
+        html += f"<li>{m.display_name}</li>"
+    html += "</ul>"
+    html += f"<a href='/lobby/{code}/start'>Start Game</a><br>"
+    html += "<a href='/'>Back to Home</a>"
+    return html
+
+@app.route('/lobby/<code>/start')
+def lobby_start(code):
+    lobby = Lobby.query.filter_by(code=code).first()
+    if not lobby:
+        return "Lobby not found."
+    members = LobbyMember.query.filter_by(lobby_id=lobby.id).all()
+    user_ids = [m.user_id for m in members]
+    users = UserTracks.query.filter(UserTracks.user_id.in_(user_ids)).all()
+    # Pool tracks
+    track_pool = {}
+    all_usernames = [u.display_name for u in users]
+    for user in users:
+        for track in user.tracks:
+            key = (track['name'], track['artists'])
+            if key not in track_pool:
+                track_pool[key] = {'track': track, 'owners': []}
+            track_pool[key]['owners'].append(user.display_name)
+    all_tracks = list(track_pool.values())
+    rounds = min(10, len(all_tracks))
+    selected_tracks = random.sample(all_tracks, rounds)
+    # Store in lobby state
+    lobby.state = {
+        'tracks': selected_tracks,
+        'round': 0,
+        'scores': {m.user_id: 0 for m in members}
+    }
+    db.session.commit()
+    session['lobby_code'] = code
+    session['lobby_round'] = 0
+    return redirect(url_for('lobby_game_round', code=code))
+
+@app.route('/lobby/<code>/round')
+def lobby_game_round(code):
+    lobby = Lobby.query.filter_by(code=code).first()
+    if not lobby or not lobby.state:
+        return "Lobby/game not found."
+    state = lobby.state
+    round_num = state.get('round', 0)
+    tracks = state.get('tracks', [])
+    if round_num >= len(tracks):
+        return redirect(url_for('lobby_game_end', code=code))
+    entry = tracks[round_num]
+    track = entry['track']
+    owners = entry['owners']
+    all_usernames = set()
+    for e in tracks:
+        all_usernames.update(e['owners'])
+    html = f"<h2>Lobby {code} - Round {round_num + 1}</h2>"
+    html += f"<strong>{track['name']}</strong> by {track['artists']}<br>"
+    if track.get('image'):
+        html += f"<img src='{track['image']}' style='height:100px;'><br>"
+    if track.get('preview_url'):
+        html += f"<audio controls src='{track['preview_url']}'></audio><br>"
+    html += f"<form method='post' action='/lobby/{code}/guess'><input type='hidden' name='owners' value='{','.join(owners)}'>"
+    for username in all_usernames:
+        html += f"<button type='submit' name='guess' value='{username}'>{username}</button> "
+    html += "</form>"
+    return html
+
+@app.route('/lobby/<code>/guess', methods=['POST'])
+def lobby_game_guess(code):
+    lobby = Lobby.query.filter_by(code=code).first()
+    if not lobby or not lobby.state:
+        return "Lobby/game not found."
+    state = lobby.state
+    round_num = state.get('round', 0)
+    tracks = state.get('tracks', [])
+    owners = request.form.get('owners', '').split(',')
+    guess = request.form.get('guess')
+    user_id = session.get('user_id')
+    # Score for this user
+    if user_id and guess in owners:
+        state['scores'][user_id] = state['scores'].get(user_id, 0) + 1
+    # Advance round
+    state['round'] = round_num + 1
+    lobby.state = state
+    db.session.commit()
+    html = f"<h2>{'✅ Correct!' if guess in owners else '❌ Wrong!'} Correct answer(s): {', '.join(owners)}</h2>"
+    html += f"<a href='{url_for('lobby_game_round', code=code)}'>Next Round</a> | <a href='/'>Back to Home</a>"
+    return html
+
+@app.route('/lobby/<code>/end')
+def lobby_game_end(code):
+    lobby = Lobby.query.filter_by(code=code).first()
+    if not lobby or not lobby.state:
+        return "Lobby/game not found."
+    state = lobby.state
+    scores = state.get('scores', {})
+    members = LobbyMember.query.filter_by(lobby_id=lobby.id).all()
+    html = f"<h2>Lobby {code} - Game Over!</h2><ul>"
+    for m in members:
+        html += f"<li>{m.display_name}: {scores.get(m.user_id, 0)}</li>"
+    html += "</ul>"
+    html += f"<a href='/lobby/{code}/start'>Play Again</a> | <a href='/'>Back to Home</a>"
+    return html
