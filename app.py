@@ -73,6 +73,7 @@ def callback():
         token_info = sp_oauth.get_access_token(code)
         sp = spotipy.Spotify(auth=token_info['access_token'])
         user = sp.current_user()
+        print("Spotify user info:", user)  # <-- This will show up in Render logs!
         user_id = user['id']
         display_name = user.get('display_name', user_id)
 
