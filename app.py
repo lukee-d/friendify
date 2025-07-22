@@ -4,6 +4,10 @@ from spotipy.oauth2 import SpotifyOAuth
 import os
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
+import psycopg
+import sqlalchemy.dialects.postgresql.psycopg
+
+print("psycopg version:", psycopg.__version__)
 
 load_dotenv()
 
