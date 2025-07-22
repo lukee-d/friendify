@@ -27,14 +27,6 @@ SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI", "https://friendify-s2rz.onrender.com/callback")
 SCOPE = "user-top-read"
 
-sp_oauth = SpotifyOAuth(
-    client_id=SPOTIPY_CLIENT_ID,
-    client_secret=SPOTIPY_CLIENT_SECRET,
-    redirect_uri=SPOTIPY_REDIRECT_URI,
-    scope=SCOPE,
-    cache_path = None
-)
-
 # Database Model
 class UserTracks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -61,17 +53,32 @@ def index():
 
 @app.route('/login')
 def login():
+    sp_oauth = SpotifyOAuth(
+        client_id=SPOTIPY_CLIENT_ID,
+        client_secret=SPOTIPY_CLIENT_SECRET,
+        redirect_uri=SPOTIPY_REDIRECT_URI,
+        scope=SCOPE,
+        cache_path=None
+    )
     auth_url = sp_oauth.get_authorize_url()
     return redirect(auth_url)
 
 @app.route('/callback')
 def callback():
+    sp_oauth = SpotifyOAuth(
+        client_id=SPOTIPY_CLIENT_ID,
+        client_secret=SPOTIPY_CLIENT_SECRET,
+        redirect_uri=SPOTIPY_REDIRECT_URI,
+        scope=SCOPE,
+        cache_path=None
+    )
     code = request.args.get('code')
     if not code:
         return "Error: No authorization code received", 400
 
     try:
         token_info = sp_oauth.get_access_token(code)
+        print("Access token:", token_info['access_token'])  # <-- Add this line
         sp = spotipy.Spotify(auth=token_info['access_token'])
         user = sp.current_user()
         print("Spotify user info:", user)  # <-- This will show up in Render logs!
