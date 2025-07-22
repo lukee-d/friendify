@@ -1,4 +1,5 @@
 Flask
 Flask-SQLAlchemy
-python-dotenv
 spotipy
+python-dotenv
+gunicorn
