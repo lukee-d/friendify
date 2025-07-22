@@ -77,7 +77,7 @@ def callback():
         return "Error: No authorization code received", 400
 
     try:
-        token_info = sp_oauth.get_access_token(code)
+        token_info = sp_oauth.get_access_token(code, check_cache=False)
         print("Access token:", token_info['access_token'])  # <-- Add this line
         sp = spotipy.Spotify(auth=token_info['access_token'])
         user = sp.current_user()
