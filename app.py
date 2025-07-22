@@ -1,5 +1,5 @@
 import os
-from flask import Flask, redirect, request, url_for, session
+from flask import Flask, redirect, request, url_for, session, jsonify  # add session to imports
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from flask_sqlalchemy import SQLAlchemy
@@ -45,7 +45,15 @@ with app.app_context():
 # Routes
 @app.route('/')
 def index():
-    return "<a href='/login'>Log in with Spotify</a>"
+    if 'user_id' in session:
+        return f"""
+            Logged in as {session.get('display_name', session['user_id'])}<br>
+            <a href='/my_tracks'>View My Tracks</a><br>
+            <a href='/saved_tracks'>View All Friends' Tracks</a><br>
+            <a href='/logout'>Log out</a>
+        """
+    else:
+        return "<a href='/login'>Log in with Spotify</a>"
 
 @app.route('/login')
 def login():
@@ -64,6 +72,10 @@ def callback():
         user = sp.current_user()
         user_id = user['id']
         display_name = user.get('display_name', user_id)
+
+        # Store user info in session
+        session['user_id'] = user_id
+        session['display_name'] = display_name
 
         # Get top tracks
         results = sp.current_user_top_tracks(limit=5, time_range='short_term')
@@ -87,13 +99,33 @@ def callback():
             db.session.add(user_record)
         db.session.commit()
 
-        return f"""
-            Hello {display_name}! Your top 5 tracks have been saved.<br>
-            <a href='/saved_tracks'>View All Friends' Tracks</a>
-        """
+        return redirect(url_for('index'))
 
     except Exception as e:
         return f"Error: {str(e)}", 500
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+@app.route('/my_tracks')
+def my_tracks():
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+    user = UserTracks.query.filter_by(user_id=user_id).first()
+    if not user:
+        return "No tracks found for your account."
+    html = f"<h2>Your Top Tracks, {user.display_name}:</h2><ul>"
+    for track in user.tracks:
+        html += "<li>"
+        html += f"<strong>{track['name']}</strong> by {track['artists']}<br>"
+        if track['image']:
+            html += f"<img src='{track['image']}' style='height:100px;'><br>"
+        html += "</li>"
+    html += "</ul><a href='/'>Back to Home</a>"
+    return html
 
 @app.route('/saved_tracks')
 def saved_tracks():
