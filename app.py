@@ -209,17 +209,23 @@ def game():
 
 @app.route('/game/guess', methods=['POST'])
 def game_guess():
-    track = request.form.get('track')
     guess = request.form.get('guess')
     owners = request.form.get('owners', '').split(',')
 
+    game_round = session.get('game_round', 0)
+    game_score = session.get('game_score', 0)
+
     if guess in owners:
         result = f"✅ Correct! {guess} has this song in their top tracks."
+        game_score += 1
     else:
         result = f"❌ Wrong! Correct answer(s): {', '.join(owners)}"
 
+    session['game_score'] = game_score
+    session['game_round'] = game_round + 1
+
     html = f"<h2>{result}</h2>"
-    html += "<a href='/game'>Play Again</a> | <a href='/'>Back to Home</a>"
+    html += f"<a href='{url_for('game_round')}'>Next Round</a> | <a href='/'>Back to Home</a>"
     return html
 
 @app.route('/admin/clear_users')
@@ -230,6 +236,74 @@ def clear_users():
         return f"Deleted {num_deleted} users from the database."
     except Exception as e:
         return f"Error: {str(e)}", 500
+
+@app.route('/game/start')
+def game_start():
+    users = UserTracks.query.all()
+    if not users:
+        return "No users have saved tracks yet."
+
+    # Build track pool
+    track_pool = {}
+    all_usernames = [user.display_name for user in users]
+    for user in users:
+        for track in user.tracks:
+            key = (track['name'], track['artists'])
+            if key not in track_pool:
+                track_pool[key] = {'track': track, 'owners': []}
+            track_pool[key]['owners'].append(user.display_name)
+
+    all_tracks = list(track_pool.values())
+    rounds = min(10, len(all_tracks))
+    selected_tracks = random.sample(all_tracks, rounds)
+
+    # Store game state in session
+    session['game_tracks'] = selected_tracks
+    session['game_round'] = 0
+    session['game_score'] = 0
+
+    return redirect(url_for('game_round'))
+
+@app.route('/game/round')
+def game_round():
+    game_tracks = session.get('game_tracks')
+    game_round = session.get('game_round', 0)
+    game_score = session.get('game_score', 0)
+
+    if not game_tracks or game_round >= len(game_tracks):
+        return redirect(url_for('game_end'))
+
+    entry = game_tracks[game_round]
+    track = entry['track']
+    owners = entry['owners']
+    all_usernames = set()
+    for e in game_tracks:
+        all_usernames.update(e['owners'])
+
+    html = f"<h2>Round {game_round + 1}</h2>"
+    html += f"<strong>{track['name']}</strong> by {track['artists']}<br>"
+    if track.get('image'):
+        html += f"<img src='{track['image']}' style='height:100px;'><br>"
+    if track.get('preview_url'):
+        html += f"<audio controls src='{track['preview_url']}'></audio><br>"
+    html += f"<form method='post' action='/game/guess'><input type='hidden' name='owners' value='{','.join(owners)}'>"
+    for username in all_usernames:
+        html += f"<button type='submit' name='guess' value='{username}'>{username}</button> "
+    html += "</form>"
+    html += f"<br>Score: {game_score}/{game_round}"
+    return html
+
+@app.route('/game/end')
+def game_end():
+    score = session.get('game_score', 0)
+    total = len(session.get('game_tracks', []))
+    html = f"<h2>Game Over!</h2><p>Your score: {score} / {total}</p>"
+    html += "<a href='/game/start'>Play Again</a> | <a href='/'>Back to Home</a>"
+    # Optionally clear session state
+    session.pop('game_tracks', None)
+    session.pop('game_round', None)
+    session.pop('game_score', None)
+    return html
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
