@@ -12,8 +12,14 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
 # PostgreSQL setup (Render provides DATABASE_URL)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace(
+    "postgres://", "postgresql+psycopg://", 1  # Key change: postgresql+psycopg://
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,  # Helps with Render's connection recycling
+    'pool_recycle': 300,    # 5 minutes (Render kills idle connections)
+}
 db = SQLAlchemy(app)
 
 # Spotify OAuth setup

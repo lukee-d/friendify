@@ -2,5 +2,5 @@ Flask==2.3.2
 spotipy==2.23.0
 python-dotenv==1.0.0
 Flask-SQLAlchemy==3.0.3
-psycopg2-binary==2.9.9
+psycopg[binary]==3.1.18  # The current latest stable version
 gunicorn==21.2.0
