@@ -167,13 +167,13 @@ def saved_tracks():
 
 @app.route('/game')
 def game():
-    # Pool all users' top 20 tracks
     users = UserTracks.query.all()
     if not users:
         return "No users have saved tracks yet."
 
     # Build a pool: each entry is (track, [user_display_names])
     track_pool = {}
+    all_usernames = [user.display_name for user in users]
     for user in users:
         for track in user.tracks:
             key = (track['name'], track['artists'])
@@ -183,13 +183,9 @@ def game():
 
     # Pick 10 random tracks for the game
     all_tracks = list(track_pool.values())
-    if len(all_tracks) < 10:
-        rounds = len(all_tracks)
-    else:
-        rounds = 10
+    rounds = min(10, len(all_tracks))
     selected_tracks = random.sample(all_tracks, rounds)
 
-    # Render a simple HTML game (for demo; you can expand with JS later)
     html = "<h2>Guess Whose Song!</h2>"
     html += "<ol>"
     for i, entry in enumerate(selected_tracks, 1):
@@ -202,12 +198,28 @@ def game():
         if track.get('preview_url'):
             html += f"<audio controls src='{track['preview_url']}'></audio><br>"
         html += f"<form method='post' action='/game/guess'><input type='hidden' name='track' value='{track['name']}|{track['artists']}'>"
-        for owner in owners:
-            html += f"<button type='submit' name='guess' value='{owner}'>{owner}</button> "
+        for username in all_usernames:
+            html += f"<button type='submit' name='guess' value='{username}'>{username}</button> "
+        html += f"<input type='hidden' name='owners' value='{','.join(owners)}'>"
         html += "</form>"
         html += "</li>"
     html += "</ol>"
     html += "<a href='/'>Back to Home</a>"
+    return html
+
+@app.route('/game/guess', methods=['POST'])
+def game_guess():
+    track = request.form.get('track')
+    guess = request.form.get('guess')
+    owners = request.form.get('owners', '').split(',')
+
+    if guess in owners:
+        result = f"✅ Correct! {guess} has this song in their top tracks."
+    else:
+        result = f"❌ Wrong! Correct answer(s): {', '.join(owners)}"
+
+    html = f"<h2>{result}</h2>"
+    html += "<a href='/game'>Play Again</a> | <a href='/'>Back to Home</a>"
     return html
 
 @app.route('/admin/clear_users')
