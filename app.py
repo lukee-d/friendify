@@ -31,7 +31,8 @@ sp_oauth = SpotifyOAuth(
     client_id=SPOTIPY_CLIENT_ID,
     client_secret=SPOTIPY_CLIENT_SECRET,
     redirect_uri=SPOTIPY_REDIRECT_URI,
-    scope=SCOPE
+    scope=SCOPE,
+    cache_path = None
 )
 
 # Database Model
