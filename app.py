@@ -11,8 +11,15 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
-# Database Configuration (for Render PostgreSQL)
-database_url = os.environ.get('DATABASE_URL', '').replace('postgres://', 'postgresql://', 1)
+# SQLite fallback
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith('postgres://'):
+    # Convert for SQLAlchemy compatibility (if you fix psycopg later)
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+else:
+    # Default to SQLite
+    database_url = 'sqlite:///tracks.db'
+
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -41,7 +48,7 @@ class UserTracks(db.Model):
     display_name = db.Column(db.String(100))
     tracks = db.Column(db.JSON)
 
-# Create tables (this runs automatically on first deploy)
+# Create tables
 with app.app_context():
     db.create_all()
 
