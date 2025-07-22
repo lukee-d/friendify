@@ -7,19 +7,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 
-# SQLite fallback
-database_url = os.environ.get('DATABASE_URL')
-if database_url and database_url.startswith('postgres://'):
-    # Convert for SQLAlchemy compatibility (if you fix psycopg later)
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-else:
-    # Default to SQLite
-    database_url = 'sqlite:///tracks.db'
-
+# Database configuration
+database_url = os.environ.get('DATABASE_URL', '').replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -28,7 +20,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 db = SQLAlchemy(app)
 
-# Spotify OAuth Configuration
+# Spotify OAuth setup
 SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI", "https://friendify-s2rz.onrender.com/callback")
@@ -48,14 +40,21 @@ class UserTracks(db.Model):
     display_name = db.Column(db.String(100))
     tracks = db.Column(db.JSON)
 
-# Create tables
 with app.app_context():
     db.create_all()
 
 # Routes
+
 @app.route('/')
 def index():
-    return "<a href='/login'>Log in with Spotify</a>"
+    if 'username' in session:
+        return f"""
+            Hello {session['username']}! <br>
+            <a href='/saved_tracks'>View All Friends' Tracks</a><br>
+            <a href='/logout'>Logout</a>
+        """
+    else:
+        return "<a href='/login'>Log in with Spotify</a>"
 
 @app.route('/login')
 def login():
@@ -69,11 +68,15 @@ def callback():
         return "Error: No authorization code received", 400
 
     try:
-        token_info = sp_oauth.get_access_token(code)
+        # Fetch token info and store in session
+        token_info = sp_oauth.get_access_token(code, as_dict=True)
+        session['token_info'] = token_info
+
         sp = spotipy.Spotify(auth=token_info['access_token'])
         user = sp.current_user()
         user_id = user['id']
         display_name = user.get('display_name', user_id)
+        session['username'] = display_name
 
         # Get top tracks
         results = sp.current_user_top_tracks(limit=5, time_range='short_term')
@@ -83,7 +86,7 @@ def callback():
             'image': item['album']['images'][0]['url'] if item['album']['images'] else None
         } for item in results['items']]
 
-        # Save to database
+        # Save or update DB record
         user_record = UserTracks.query.filter_by(user_id=user_id).first()
         if user_record:
             user_record.tracks = track_info
@@ -99,7 +102,8 @@ def callback():
 
         return f"""
             Hello {display_name}! Your top 5 tracks have been saved.<br>
-            <a href='/saved_tracks'>View All Friends' Tracks</a>
+            <a href='/saved_tracks'>View All Friends' Tracks</a><br>
+            <a href='/logout'>Logout</a>
         """
 
     except Exception as e:
@@ -122,10 +126,16 @@ def saved_tracks():
                     html += f"<img src='{track['image']}' style='height:100px;'><br>"
                 html += "</li>"
             html += "</ul><hr>"
+        html += "<a href='/logout'>Logout</a>"
         return html
 
     except Exception as e:
         return f"Database error: {str(e)}", 500
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
