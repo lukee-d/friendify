@@ -47,7 +47,7 @@ def index():
             Logged in as {session.get('display_name', session['user_id'])}<br>
             <a href='/my_tracks'>View My Tracks</a><br>
             <a href='/saved_tracks'>View All Friends' Tracks</a><br>
-            <a href='/game'>Play the Guessing Game</a><br>
+            <a href='/game/start'>Play the Guessing Game</a><br>
             <a href='/logout'>Log out</a>
         """
     else:
@@ -132,7 +132,12 @@ def my_tracks():
         return redirect(url_for('login'))
     user = UserTracks.query.filter_by(user_id=user_id).first()
     if not user:
-        return "No tracks found for your account."
+        # Prompt user to re-save tracks
+        return """
+            <h2>No tracks found for your account.</h2>
+            <a href='/login'>Click here to re-save your tracks from Spotify</a>
+            <br><a href='/'>Back to Home</a>
+        """
     html = f"<h2>Your Top Tracks, {user.display_name}:</h2><ul>"
     for track in user.tracks:
         html += "<li>"
@@ -167,45 +172,7 @@ def saved_tracks():
 
 @app.route('/game')
 def game():
-    users = UserTracks.query.all()
-    if not users:
-        return "No users have saved tracks yet."
-
-    # Build a pool: each entry is (track, [user_display_names])
-    track_pool = {}
-    all_usernames = [user.display_name for user in users]
-    for user in users:
-        for track in user.tracks:
-            key = (track['name'], track['artists'])
-            if key not in track_pool:
-                track_pool[key] = {'track': track, 'owners': []}
-            track_pool[key]['owners'].append(user.display_name)
-
-    # Pick 10 random tracks for the game
-    all_tracks = list(track_pool.values())
-    rounds = min(10, len(all_tracks))
-    selected_tracks = random.sample(all_tracks, rounds)
-
-    html = "<h2>Guess Whose Song!</h2>"
-    html += "<ol>"
-    for i, entry in enumerate(selected_tracks, 1):
-        track = entry['track']
-        owners = entry['owners']
-        html += f"<li>"
-        html += f"<strong>{track['name']}</strong> by {track['artists']}<br>"
-        if track.get('image'):
-            html += f"<img src='{track['image']}' style='height:100px;'><br>"
-        if track.get('preview_url'):
-            html += f"<audio controls src='{track['preview_url']}'></audio><br>"
-        html += f"<form method='post' action='/game/guess'><input type='hidden' name='track' value='{track['name']}|{track['artists']}'>"
-        for username in all_usernames:
-            html += f"<button type='submit' name='guess' value='{username}'>{username}</button> "
-        html += f"<input type='hidden' name='owners' value='{','.join(owners)}'>"
-        html += "</form>"
-        html += "</li>"
-    html += "</ol>"
-    html += "<a href='/'>Back to Home</a>"
-    return html
+    return redirect(url_for('game_start'))
 
 @app.route('/game/guess', methods=['POST'])
 def game_guess():
