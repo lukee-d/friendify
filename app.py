@@ -111,7 +111,8 @@ def callback():
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('index'))
+    spotify_logout_url = "https://accounts.spotify.com/logout"
+    return redirect(f"{spotify_logout_url}?continue={url_for('index', _external=True)}")
 
 @app.route('/my_tracks')
 def my_tracks():
