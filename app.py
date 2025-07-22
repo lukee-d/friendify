@@ -28,12 +28,23 @@ SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI", "https://friendify-s2rz.onrender.com/callback")
 SCOPE = "user-top-read"
 
-# Database Model
+# Database Models
 class UserTracks(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(50), unique=True, nullable=False)
     display_name = db.Column(db.String(100))
     tracks = db.Column(db.JSON)
+
+class Lobby(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(8), unique=True, nullable=False)
+    state = db.Column(db.JSON)  # Store game state, track pool, round, etc.
+
+class LobbyMember(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    lobby_id = db.Column(db.Integer, db.ForeignKey('lobby.id'))
+    user_id = db.Column(db.String(50))
+    display_name = db.Column(db.String(100))
 
 # Create tables (this runs automatically on first deploy)
 with app.app_context():
